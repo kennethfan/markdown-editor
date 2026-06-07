@@ -1,8 +1,67 @@
 import { SyntaxStyle, RGBA, infoStringToFiletype } from "@opentui/core"
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback } from "react"
 import { marked } from "marked"
 import type { ReactNode } from "react"
 import type { Token as MarkedToken, Tokens } from "marked"
+import fs from "node:fs"
+import path from "node:path"
+import os from "node:os"
+
+// ─── iTerm2 inline image protocol ──────────────────────────
+
+// Check if the terminal supports inline images (iTerm2)
+function isITerm2(): boolean {
+  return process.env.TERM_PROGRAM === "iTerm.app"
+}
+
+// Maximum file size to render inline (2 MB)
+const MAX_INLINE_IMAGE_BYTES = 2 * 1024 * 1024
+
+/**
+ * Display an image directly in the terminal using iTerm2's inline image protocol.
+ * Writes to /dev/tty to bypass OpenTUI's stdout pipeline.
+ * Returns true if the image was displayed successfully.
+ */
+function displayITermImage(filePath: string): boolean {
+  try {
+    if (!isITerm2()) return false
+    const bytes = fs.readFileSync(filePath)
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_INLINE_IMAGE_BYTES) return false
+    const base64 = bytes.toString("base64")
+    const filename = filePath.split("/").pop() || "image"
+    const escapedName = filename.replace(/[;:\\]/g, "_")
+    // iTerm2 inline image protocol: OSC 1337 ; File = params : base64 ST
+    const osc = `\x1b]1337;File=inline=1;size=${bytes.byteLength};name=${escapedName}:${base64}\x07`
+    const fd = fs.openSync("/dev/tty", "w")
+    fs.writeSync(fd, osc)
+    fs.closeSync(fd)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Resolve an image URL to an absolute file path.
+ * Handles ~/path, /absolute/path, and relative paths.
+ */
+function resolveImagePath(url: string): string | null {
+  // Skip remote URLs
+  if (url.includes("://")) return null
+  try {
+    if (url.startsWith("~")) {
+      return os.homedir() + url.slice(1)
+    } else if (url.startsWith("/")) {
+      return url
+    } else {
+      return path.resolve(process.cwd(), url)
+    }
+  } catch {
+    return null
+  }
+}
+
+type OnImageClick = (url: string) => void
 
 interface CodeBlockRange {
   startLine: number // 0-based, first content line
@@ -77,9 +136,13 @@ function renderInlineTokens(tokens: MarkedToken[] | undefined): ReactNode[] {
       }
       case "image": {
         const t = token as Tokens.Image
+        const url = t.href || ""
+        const alt = t.text || url
         return (
-          <span key={i} fg="#888888">
-            [Image: {t.text}]
+          <span key={i}>
+            <text fg="#bb9af7">🖼️ </text>
+            <text fg="#e0af68">{alt}</text>
+            <text fg="#565f89"> ({url})</text>
           </span>
         )
       }
@@ -106,6 +169,7 @@ function renderToken(
   codeBlockLineColors: Map<number, string> | undefined,
   onCopyCodeBlock?: (content: string) => void,
   codeWrap?: boolean,
+  onImageClick?: OnImageClick,
 ): ReactNode {
   switch (token.type) {
     case "heading": {
@@ -121,11 +185,56 @@ function renderToken(
 
     case "paragraph": {
       const t = token as Tokens.Paragraph
-      return (
-        <box paddingY={1}>
-          <text>{renderInlineTokens(t.tokens)}</text>
-        </box>
-      )
+      // Images need block-level <box> for onMouseDown; render inline text + image boxes as segments
+      const hasImage = t.tokens?.some(tok => tok.type === "image")
+      if (!hasImage) {
+        return (
+          <box paddingY={1}>
+            <text>{renderInlineTokens(t.tokens)}</text>
+          </box>
+        )
+      }
+      // Split tokens into text segments and image boxes
+      const imgSegments: ReactNode[] = []
+      let textBuf: MarkedToken[] = []
+      let segKey = 0
+      for (const tok of t.tokens ?? []) {
+        if (tok.type === "image") {
+          if (textBuf.length > 0) {
+            imgSegments.push(<text key={segKey++}>{renderInlineTokens(textBuf)}</text>)
+            textBuf = []
+          }
+          const img = tok as Tokens.Image
+          const url = img.href || ""
+          const alt = img.text || url
+          const isClickable = url.length > 0 && !url.includes("://")
+          imgSegments.push(
+            <box
+              key={segKey++}
+              paddingY={1}
+              borderStyle="rounded"
+              borderColor="#565f89"
+              backgroundColor="#161b22"
+              title=" 🖼️ Image "
+              titleAlignment="left"
+              onMouseDown={isClickable ? () => onImageClick?.(url) : undefined}
+            >
+              <text>
+                <text fg={isClickable ? "#7dcfff" : "#e0af68"}>{alt}</text>
+                <text fg="#565f89">  {url}</text>
+                {isClickable && <text fg="#565f89" attributes={1}>  [click to render]</text>}
+                {!isClickable && <text fg="#565f89">  (remote)</text>}
+              </text>
+            </box>
+          )
+        } else {
+          textBuf.push(tok)
+        }
+      }
+      if (textBuf.length > 0) {
+        imgSegments.push(<text key={segKey++}>{renderInlineTokens(textBuf)}</text>)
+      }
+      return <box paddingY={1} flexDirection="column">{imgSegments}</box>
     }
 
     case "code": {
@@ -203,7 +312,7 @@ function renderToken(
         <box paddingLeft={2} marginY={1} backgroundColor="#161b22">
           <box flexDirection="column" paddingLeft={1} border={["left"]} borderColor="#58a6ff">
             {t.tokens.length > 0 ? (
-              t.tokens.map((child, i) => renderToken(child, i, syntaxStyle, codeBlockLineColors, onCopyCodeBlock, codeWrap))
+              t.tokens.map((child, i) => renderToken(child, i, syntaxStyle, codeBlockLineColors, onCopyCodeBlock, codeWrap, onImageClick))
             ) : (
               <text fg="#8b949e">{t.text}</text>
             )}
@@ -328,6 +437,14 @@ export function MarkdownPreview({ markdown, activeEditorLine, onCopyCodeBlock, o
   const [syntaxStyle] = useState(createCodeStyle)
   const tokens = marked.lexer(markdown)
 
+  // Handle image click: resolve path and display via iTerm2 protocol
+  const handleImageClick = useCallback((url: string) => {
+    const fullPath = resolveImagePath(url)
+    if (fullPath) {
+      displayITermImage(fullPath)
+    }
+  }, [])
+
   // Find all fenced code block ranges in the markdown
   const codeBlockRanges = useMemo(() => findCodeBlockRanges(markdown), [markdown])
 
@@ -379,7 +496,7 @@ export function MarkdownPreview({ markdown, activeEditorLine, onCopyCodeBlock, o
             const lineColors = token.type === "code"
               ? codeBlockLineColorsMap.get(codeBlockIndex++)
               : undefined
-            return renderToken(token, i, syntaxStyle, lineColors, onCopyCodeBlock, codeWrap)
+            return renderToken(token, i, syntaxStyle, lineColors, onCopyCodeBlock, codeWrap, handleImageClick)
           })
         )}
       </box>
