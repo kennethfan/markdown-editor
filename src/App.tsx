@@ -1,7 +1,7 @@
 import { useKeyboard, useTerminalDimensions } from "@opentui/react"
 import { useState, useRef, useCallback, useMemo } from "react"
 import { SyntaxStyle, type TextareaRenderable } from "@opentui/core"
-import { MarkdownPreview } from "./MarkdownPreview"
+import { MarkdownPreview, type ImageStatusInfo } from "./MarkdownPreview"
 import path from "node:path"
 import { useFileOperations } from "./hooks/useFileOperations"
 import { StatusBar } from "./components/StatusBar"
@@ -1257,6 +1257,13 @@ export function App() {
     writeClipboard(blocks.join("\n\n─────\n\n"))
   }, [markdown])
 
+  // Handle image rendering status updates from MarkdownPreview
+  const handleImageStatus = useCallback((status: ImageStatusInfo) => {
+    if (status) {
+      setStatusMessage({ text: status.text, type: status.type })
+    }
+  }, [])
+
   // Language → file extension mapping for code block export
   const LANG_EXTENSIONS: Record<string, string> = {
     javascript: "js",
@@ -1846,6 +1853,7 @@ export function App() {
                 activeEditorLine={cursorLine - 1}
                 codeWrap={codeWrap}
                 baseDir={baseDir}
+                onImageStatus={handleImageStatus}
                 onCopyAllCodeBlocks={copyAllCodeBlocks}
                 onCopyCodeBlock={(content) => {
                   if (copyToClipboard(content)) {

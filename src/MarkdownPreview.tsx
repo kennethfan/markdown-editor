@@ -378,6 +378,8 @@ function findActiveCodeBlockLine(
   return undefined
 }
 
+export type ImageStatusInfo = { text: string; type: "info" | "success" | "error" } | null
+
 interface MarkdownPreviewProps {
   markdown: string
   activeEditorLine?: number // 0-based cursor line in the editor
@@ -385,6 +387,7 @@ interface MarkdownPreviewProps {
   onCopyAllCodeBlocks?: () => void
   codeWrap?: boolean // true = word-wrap, false = horizontal scroll
   baseDir?: string // directory of the current markdown file, for relative image path resolution
+  onImageStatus?: (status: ImageStatusInfo) => void
 }
 
 // Recursively extract all local image URLs from marked tokens
@@ -414,7 +417,7 @@ function extractLocalImageUrls(tokens: MarkedToken[]): string[] {
   return urls
 }
 
-export function MarkdownPreview({ markdown, activeEditorLine, onCopyCodeBlock, onCopyAllCodeBlocks, codeWrap, baseDir }: MarkdownPreviewProps) {
+export function MarkdownPreview({ markdown, activeEditorLine, onCopyCodeBlock, onCopyAllCodeBlocks, codeWrap, baseDir, onImageStatus }: MarkdownPreviewProps) {
   const [syntaxStyle] = useState(createCodeStyle)
   const tokens = marked.lexer(markdown)
 
@@ -422,19 +425,37 @@ export function MarkdownPreview({ markdown, activeEditorLine, onCopyCodeBlock, o
   const localImageUrls = useMemo(() => extractLocalImageUrls(tokens), [tokens])
 
   useEffect(() => {
-    if (localImageUrls.length === 0 || !isITerm2()) return
+    if (localImageUrls.length === 0) {
+      onImageStatus?.(null)
+      return
+    }
+    if (!isITerm2()) {
+      onImageStatus?.({ text: "⚠️ iTerm2 required for inline images", type: "info" })
+      return
+    }
 
     const timer = setTimeout(() => {
+      let successCount = 0
+      let failCount = 0
       for (const url of localImageUrls) {
         const fullPath = resolveImagePath(url, baseDir)
-        if (fullPath) {
-          displayITermImage(fullPath)
+        if (fullPath && displayITermImage(fullPath)) {
+          successCount++
+        } else {
+          failCount++
         }
       }
-    }, 0) // fire immediately after current event loop tick
+      if (localImageUrls.length === successCount) {
+        onImageStatus?.({ text: `🖼️ Rendered ${successCount} image${successCount > 1 ? "s" : ""}`, type: "success" })
+      } else if (successCount > 0) {
+        onImageStatus?.({ text: `🖼️ Rendered ${successCount}/${localImageUrls.length} (${failCount} failed)`, type: "error" })
+      } else {
+        onImageStatus?.({ text: `🖼️ Failed ${failCount} image${failCount > 1 ? "s" : ""}`, type: "error" })
+      }
+    }, 0)
 
     return () => clearTimeout(timer)
-  }, [localImageUrls])
+  }, [localImageUrls, baseDir, onImageStatus])
 
   // Find all fenced code block ranges in the markdown
   const codeBlockRanges = useMemo(() => findCodeBlockRanges(markdown), [markdown])
