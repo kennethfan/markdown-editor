@@ -1,5 +1,5 @@
 import { SyntaxStyle, RGBA, infoStringToFiletype } from "@opentui/core"
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { marked } from "marked"
 import type { ReactNode } from "react"
 import type { Token as MarkedToken, Tokens } from "marked"
@@ -60,8 +60,6 @@ function resolveImagePath(url: string): string | null {
     return null
   }
 }
-
-type OnImageClick = (url: string) => void
 
 interface CodeBlockRange {
   startLine: number // 0-based, first content line
@@ -169,7 +167,6 @@ function renderToken(
   codeBlockLineColors: Map<number, string> | undefined,
   onCopyCodeBlock?: (content: string) => void,
   codeWrap?: boolean,
-  onImageClick?: OnImageClick,
 ): ReactNode {
   switch (token.type) {
     case "heading": {
@@ -185,56 +182,11 @@ function renderToken(
 
     case "paragraph": {
       const t = token as Tokens.Paragraph
-      // Images need block-level <box> for onMouseDown; render inline text + image boxes as segments
-      const hasImage = t.tokens?.some(tok => tok.type === "image")
-      if (!hasImage) {
-        return (
-          <box paddingY={1}>
-            <text>{renderInlineTokens(t.tokens)}</text>
-          </box>
-        )
-      }
-      // Split tokens into text segments and image boxes
-      const imgSegments: ReactNode[] = []
-      let textBuf: MarkedToken[] = []
-      let segKey = 0
-      for (const tok of t.tokens ?? []) {
-        if (tok.type === "image") {
-          if (textBuf.length > 0) {
-            imgSegments.push(<text key={segKey++}>{renderInlineTokens(textBuf)}</text>)
-            textBuf = []
-          }
-          const img = tok as Tokens.Image
-          const url = img.href || ""
-          const alt = img.text || url
-          const isClickable = url.length > 0 && !url.includes("://")
-          imgSegments.push(
-            <box
-              key={segKey++}
-              paddingY={1}
-              borderStyle="rounded"
-              borderColor="#565f89"
-              backgroundColor="#161b22"
-              title=" 🖼️ Image "
-              titleAlignment="left"
-              onMouseDown={isClickable ? () => onImageClick?.(url) : undefined}
-            >
-              <text>
-                <text fg={isClickable ? "#7dcfff" : "#e0af68"}>{alt}</text>
-                <text fg="#565f89">  {url}</text>
-                {isClickable && <text fg="#565f89" attributes={1}>  [click to render]</text>}
-                {!isClickable && <text fg="#565f89">  (remote)</text>}
-              </text>
-            </box>
-          )
-        } else {
-          textBuf.push(tok)
-        }
-      }
-      if (textBuf.length > 0) {
-        imgSegments.push(<text key={segKey++}>{renderInlineTokens(textBuf)}</text>)
-      }
-      return <box paddingY={1} flexDirection="column">{imgSegments}</box>
+      return (
+        <box paddingY={1}>
+          <text>{renderInlineTokens(t.tokens)}</text>
+        </box>
+      )
     }
 
     case "code": {
@@ -312,7 +264,7 @@ function renderToken(
         <box paddingLeft={2} marginY={1} backgroundColor="#161b22">
           <box flexDirection="column" paddingLeft={1} border={["left"]} borderColor="#58a6ff">
             {t.tokens.length > 0 ? (
-              t.tokens.map((child, i) => renderToken(child, i, syntaxStyle, codeBlockLineColors, onCopyCodeBlock, codeWrap, onImageClick))
+              t.tokens.map((child, i) => renderToken(child, i, syntaxStyle, codeBlockLineColors, onCopyCodeBlock, codeWrap))
             ) : (
               <text fg="#8b949e">{t.text}</text>
             )}
@@ -433,17 +385,54 @@ interface MarkdownPreviewProps {
   codeWrap?: boolean // true = word-wrap, false = horizontal scroll
 }
 
+// Recursively extract all local image URLs from marked tokens
+function extractLocalImageUrls(tokens: MarkedToken[]): string[] {
+  const urls: string[] = []
+  function walk(list: MarkedToken[]) {
+    for (const token of list) {
+      if (token.type === "image") {
+        const t = token as Tokens.Image
+        if (t.href && !t.href.includes("://")) {
+          urls.push(t.href)
+        }
+      }
+      if ("tokens" in token && Array.isArray((token as any).tokens)) {
+        walk((token as any).tokens as MarkedToken[])
+      }
+      if ("items" in token && Array.isArray((token as any).items)) {
+        for (const item of (token as any).items as any[]) {
+          if (item.tokens && Array.isArray(item.tokens)) {
+            walk(item.tokens as MarkedToken[])
+          }
+        }
+      }
+    }
+  }
+  walk(tokens)
+  return urls
+}
+
 export function MarkdownPreview({ markdown, activeEditorLine, onCopyCodeBlock, onCopyAllCodeBlocks, codeWrap }: MarkdownPreviewProps) {
   const [syntaxStyle] = useState(createCodeStyle)
   const tokens = marked.lexer(markdown)
 
-  // Handle image click: resolve path and display via iTerm2 protocol
-  const handleImageClick = useCallback((url: string) => {
-    const fullPath = resolveImagePath(url)
-    if (fullPath) {
-      displayITermImage(fullPath)
-    }
-  }, [])
+  // Extract local image URLs and auto-render via iTerm2 protocol
+  const localImageUrls = useMemo(() => extractLocalImageUrls(tokens), [tokens])
+
+  useEffect(() => {
+    if (localImageUrls.length === 0 || !isITerm2()) return
+
+    const timer = setTimeout(() => {
+      for (const url of localImageUrls) {
+        const fullPath = resolveImagePath(url)
+        if (fullPath) {
+          displayITermImage(fullPath)
+        }
+      }
+    }, 80) // wait for OpenTUI to flush its frame
+
+    return () => clearTimeout(timer)
+  }, [localImageUrls])
 
   // Find all fenced code block ranges in the markdown
   const codeBlockRanges = useMemo(() => findCodeBlockRanges(markdown), [markdown])
@@ -496,7 +485,7 @@ export function MarkdownPreview({ markdown, activeEditorLine, onCopyCodeBlock, o
             const lineColors = token.type === "code"
               ? codeBlockLineColorsMap.get(codeBlockIndex++)
               : undefined
-            return renderToken(token, i, syntaxStyle, lineColors, onCopyCodeBlock, codeWrap, handleImageClick)
+            return renderToken(token, i, syntaxStyle, lineColors, onCopyCodeBlock, codeWrap)
           })
         )}
       </box>
