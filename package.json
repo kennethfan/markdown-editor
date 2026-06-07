@@ -1,0 +1,19 @@
+{
+  "name": "markdown-editor",
+  "module": "src/index.tsx",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.3.2",
+    "@opentui/react": "^0.3.2",
+    "@types/react": "^19.2.16",
+    "marked": "^18.0.5",
+    "react": "^19.2.7"
+  }
+}
