@@ -44,8 +44,9 @@ function displayITermImage(filePath: string): boolean {
 /**
  * Resolve an image URL to an absolute file path.
  * Handles ~/path, /absolute/path, and relative paths.
+ * For relative paths, resolves against baseDir (or process.cwd() as fallback).
  */
-function resolveImagePath(url: string): string | null {
+function resolveImagePath(url: string, baseDir?: string): string | null {
   // Skip remote URLs
   if (url.includes("://")) return null
   try {
@@ -54,7 +55,7 @@ function resolveImagePath(url: string): string | null {
     } else if (url.startsWith("/")) {
       return url
     } else {
-      return path.resolve(process.cwd(), url)
+      return path.resolve(baseDir ?? process.cwd(), url)
     }
   } catch {
     return null
@@ -383,6 +384,7 @@ interface MarkdownPreviewProps {
   onCopyCodeBlock?: (content: string) => void
   onCopyAllCodeBlocks?: () => void
   codeWrap?: boolean // true = word-wrap, false = horizontal scroll
+  baseDir?: string // directory of the current markdown file, for relative image path resolution
 }
 
 // Recursively extract all local image URLs from marked tokens
@@ -412,7 +414,7 @@ function extractLocalImageUrls(tokens: MarkedToken[]): string[] {
   return urls
 }
 
-export function MarkdownPreview({ markdown, activeEditorLine, onCopyCodeBlock, onCopyAllCodeBlocks, codeWrap }: MarkdownPreviewProps) {
+export function MarkdownPreview({ markdown, activeEditorLine, onCopyCodeBlock, onCopyAllCodeBlocks, codeWrap, baseDir }: MarkdownPreviewProps) {
   const [syntaxStyle] = useState(createCodeStyle)
   const tokens = marked.lexer(markdown)
 
@@ -424,7 +426,7 @@ export function MarkdownPreview({ markdown, activeEditorLine, onCopyCodeBlock, o
 
     const timer = setTimeout(() => {
       for (const url of localImageUrls) {
-        const fullPath = resolveImagePath(url)
+        const fullPath = resolveImagePath(url, baseDir)
         if (fullPath) {
           displayITermImage(fullPath)
         }

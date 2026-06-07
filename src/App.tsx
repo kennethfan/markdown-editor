@@ -2,6 +2,7 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/react"
 import { useState, useRef, useCallback, useMemo } from "react"
 import { SyntaxStyle, type TextareaRenderable } from "@opentui/core"
 import { MarkdownPreview } from "./MarkdownPreview"
+import path from "node:path"
 import { useFileOperations } from "./hooks/useFileOperations"
 import { StatusBar } from "./components/StatusBar"
 import { FileDialog } from "./components/FileDialog"
@@ -157,6 +158,14 @@ export function App() {
   // Calculate layout dimensions
   const halfWidth = Math.floor(width / 2) - 1
   const mainHeight = height - 2
+
+  // Directory of the current file for relative image path resolution
+  const baseDir = useMemo(() => {
+    if (currentFilePath) {
+      return path.dirname(currentFilePath)
+    }
+    return undefined
+  }, [currentFilePath])
 
   // Word count derived from markdown
   const wordCount = useMemo(() => {
@@ -1836,6 +1845,7 @@ export function App() {
                 markdown={markdown}
                 activeEditorLine={cursorLine - 1}
                 codeWrap={codeWrap}
+                baseDir={baseDir}
                 onCopyAllCodeBlocks={copyAllCodeBlocks}
                 onCopyCodeBlock={(content) => {
                   if (copyToClipboard(content)) {
