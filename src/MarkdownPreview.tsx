@@ -138,10 +138,8 @@ function renderInlineTokens(tokens: MarkedToken[] | undefined): ReactNode[] {
         const url = t.href || ""
         const alt = t.text || url
         return (
-          <span key={i}>
-            <text fg="#bb9af7">🖼️ </text>
-            <text fg="#e0af68">{alt}</text>
-            <text fg="#565f89"> ({url})</text>
+          <span key={i} fg="#e0af68">
+            🖼️ {alt} ({url})
           </span>
         )
       }
