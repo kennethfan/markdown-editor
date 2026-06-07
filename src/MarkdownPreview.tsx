@@ -1,5 +1,5 @@
 import { SyntaxStyle, RGBA, infoStringToFiletype } from "@opentui/core"
-import { useState, useMemo, useEffect } from "react"
+import { useState, useRef, useMemo, useEffect } from "react"
 import { marked } from "marked"
 import type { ReactNode } from "react"
 import type { Token as MarkedToken, Tokens } from "marked"
@@ -417,7 +417,10 @@ function extractLocalImageUrls(tokens: MarkedToken[]): string[] {
 
 export function MarkdownPreview({ markdown, activeEditorLine, onCopyCodeBlock, onCopyAllCodeBlocks, codeWrap, baseDir, onImageStatus }: MarkdownPreviewProps) {
   const [syntaxStyle] = useState(createCodeStyle)
-  const tokens = marked.lexer(markdown)
+  const tokens = useMemo(() => marked.lexer(markdown), [markdown])
+
+  // Track which image file paths have already been rendered (prevents pile-up on re-render)
+  const renderedImagesRef = useRef(new Set<string>())
 
   // Extract local image URLs and auto-render via iTerm2 protocol
   const localImageUrls = useMemo(() => extractLocalImageUrls(tokens), [tokens])
@@ -433,22 +436,37 @@ export function MarkdownPreview({ markdown, activeEditorLine, onCopyCodeBlock, o
     }
 
     const timer = setTimeout(() => {
-      let successCount = 0
+      let newCount = 0
+      let skipCount = 0
       let failCount = 0
       for (const url of localImageUrls) {
         const fullPath = resolveImagePath(url, baseDir)
-        if (fullPath && displayITermImage(fullPath)) {
-          successCount++
+        if (!fullPath) {
+          failCount++
+          continue
+        }
+        // Skip images already rendered in this session
+        if (renderedImagesRef.current.has(fullPath)) {
+          skipCount++
+          continue
+        }
+        if (displayITermImage(fullPath)) {
+          renderedImagesRef.current.add(fullPath)
+          newCount++
         } else {
           failCount++
         }
       }
-      if (localImageUrls.length === successCount) {
-        onImageStatus?.({ text: `🖼️ Rendered ${successCount} image${successCount > 1 ? "s" : ""}`, type: "success" })
-      } else if (successCount > 0) {
-        onImageStatus?.({ text: `🖼️ Rendered ${successCount}/${localImageUrls.length} (${failCount} failed)`, type: "error" })
-      } else {
-        onImageStatus?.({ text: `🖼️ Failed ${failCount} image${failCount > 1 ? "s" : ""}`, type: "error" })
+      if (newCount > 0 || failCount > 0) {
+        if (failCount === 0) {
+          onImageStatus?.({ text: `🖼️ Rendered ${newCount} image${newCount > 1 ? "s" : ""}`, type: "success" })
+        } else if (newCount > 0) {
+          onImageStatus?.({ text: `🖼️ Rendered ${newCount}/${localImageUrls.length} (${failCount} failed)`, type: "error" })
+        } else {
+          onImageStatus?.({ text: `🖼️ Failed ${failCount} image${failCount > 1 ? "s" : ""}`, type: "error" })
+        }
+      } else if (skipCount > 0) {
+        onImageStatus?.(null)
       }
     }, 0)
 
