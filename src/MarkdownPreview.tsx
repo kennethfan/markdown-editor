@@ -431,7 +431,7 @@ export function MarkdownPreview({ markdown, activeEditorLine, onCopyCodeBlock, o
           displayITermImage(fullPath)
         }
       }
-    }, 80) // wait for OpenTUI to flush its frame
+    }, 0) // fire immediately after current event loop tick
 
     return () => clearTimeout(timer)
   }, [localImageUrls])
