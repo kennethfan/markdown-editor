@@ -56,6 +56,11 @@ The editor includes a built-in vim emulation with three modes:
 | `gg` `G` | File start / File end |
 | `5gg` | Go to line 5 (count + gg) |
 | `5j` | Move down 5 lines (count + movement) |
+| `Ctrl+f` `Ctrl+b` | Page down / Page up |
+| `Ctrl+d` `Ctrl+u` | Half page down / Half page up |
+| `{` `}` | Paragraph backward / forward |
+| `%` | Jump to matching bracket `(){}[]` |
+| `H` `M` `L` | Screen top / Screen middle / Screen bottom |
 
 ### NORMAL Mode — Editing
 
@@ -65,16 +70,24 @@ The editor includes a built-in vim emulation with three modes:
 | `I` `A` | Insert at line start / line end |
 | `o` `O` | New line below / above |
 | `x` | Delete character (supports count: `5x`) |
+| `X` | Delete character before cursor (`dh`) |
+| `s` | Delete character and enter insert (`cl`) |
+| `S` | Delete line and enter insert (`cc`) |
+| `D` | Delete to end of line (`d$`) |
+| `C` | Delete to end of line and enter insert (`c$`) |
+| `r` | Replace character under cursor (`5ra` → replace 5 chars with `a`) |
 | `dd` | Delete line (supports count: `3dd`) |
 | `yy` | Yank (copy) line |
 | `p` `P` | Paste after / before cursor |
+| `J` | Join next line into current |
 | `u` | Undo |
 | `Ctrl+r` | Redo |
 | `.` | Repeat last edit operation |
 | `>>` `<<` | Indent / Deindent line |
-| `dw` `c$` `y0` | Operator + motion (delete/change/yank) |
+| `Ctrl+a` | Increment number at cursor by count |
+| `Ctrl+x` | Decrement number at cursor by count |
 
-### NORMAL Mode — Operators
+### NORMAL Mode — Operators + Motions
 
 After pressing an operator (`d`, `y`, `c`, `>`, `<`), the editor waits for a **motion** to define the range:
 
@@ -87,6 +100,42 @@ After pressing an operator (`d`, `y`, `c`, `>`, `<`), the editor waits for a **m
 | `>` | `>` → `>>` | Indent current line |
 | `<` | `<` → `<<` | Deindent current line |
 
+### Text Objects
+
+Text objects work with operators `d`/`y`/`c` to operate on structural text units:
+
+| Text Object | Example | Result |
+|-------------|---------|--------|
+| `iw` / `aw` | `diw` | Delete inner word |
+| | `ciw` | Change word (enters insert) |
+| | `yaw` | Yank a word + trailing space |
+| `i(` / `a(` | `di(` | Delete inside parentheses |
+| | `ca(` | Change including parentheses |
+| `i{` / `a{` | `ci{` | Change inside curly braces |
+| `i[` / `a[` | `da[` | Delete including brackets |
+| `i"` / `a"` | `ci"` | Change inside double quotes |
+| `i'` / `a'` | `da'` | Delete including single quotes |
+
+### Named Registers `"a`-`"z`
+
+Prefix any yank/delete/paste with `"<register>` to use named registers:
+
+| Command | Action |
+|---------|--------|
+| `"ayw` | Yank word into register `a` |
+| `"add` | Delete line into register `d` |
+| `"ap` | Paste from register `a` |
+| `"adiw` | Delete inner word into register `a` |
+| `"+` / `"*` | System clipboard (wired for future use) |
+
+### Word Search (`*` / `#`)
+
+| Key | Action |
+|-----|--------|
+| `*` | Search forward for word under cursor (highlights all matches) |
+| `#` | Search backward for word under cursor |
+| `n` / `N` | Navigate next / previous match (also works after `*` or `#`) |
+
 ### VISUAL Mode
 
 Press `v` in NORMAL mode to enter VISUAL mode and select text:
@@ -95,7 +144,7 @@ Press `v` in NORMAL mode to enter VISUAL mode and select text:
 |-----|--------|
 | `h` `j` `k` `l` | Extend selection |
 | `w` `b` `e` `$` `0` `G` | Extend selection to word/line/buffer |
-| `d` `x` | Delete selection (yanked) |
+| `d` `x` | Delete selection (yanked to default register) |
 | `y` | Yank selection |
 | `c` | Delete selection and enter INSERT |
 | `>` | Indent selected lines |
@@ -115,6 +164,7 @@ Press `/` in NORMAL mode to search:
 | `Esc` | Cancel search, clear highlights |
 
 - Matches are **case-insensitive**
+- Also works after `*` / `#` word search
 - All matches highlighted with a yellow background in the editor
 
 ### `:` Command Mode
@@ -128,6 +178,7 @@ Press `:` in NORMAL mode to enter command mode.
 | `:q!` | Force quit (discard changes) |
 | `:wq` | Save and quit |
 | `:wq!` | Force save and quit |
+| `:help` `:h` | Show keyboard shortcuts help |
 
 ### `:s` Substitute
 
@@ -161,7 +212,7 @@ Example:
 
 Press `.` in NORMAL mode to repeat the last edit operation.
 
-Supports repeating: `dd`, `cc`, `>>`, `<<`, `x`, `p`, `P`, `dw`, `cw`, etc.
+Supports repeating: `dd`, `cc`, `>>`, `<<`, `x`, `X`, `r`, `p`, `P`, `dw`, `cw`, text object operations, `Ctrl+a`/`Ctrl+x`, and more.
 
 ---
 
@@ -236,16 +287,41 @@ bun run tsc         # TypeScript type check
 
 ```
 src/
-├── index.tsx                  # Entry point
-├── App.tsx                    # Main editor component + vim mode
-├── MarkdownPreview.tsx        # Markdown renderer
+├── index.tsx                         # Entry point
+├── App.tsx                           # Main component (orchestrates hooks + JSX)
+├── vim-helpers.ts                    # Pure vim helper functions
+├── vim-helpers.test.ts               # Unit tests (88 tests)
+├── MarkdownPreview.tsx               # Markdown renderer
 ├── components/
-│   ├── FindReplaceBar.tsx     # Find/replace UI
-│   ├── FileDialog.tsx         # Save/open dialog
-│   ├── StatusBar.tsx          # Bottom status bar
-│   └── VimCmdBar.tsx          # Vim : command and / search input
+│   ├── HelpOverlay.tsx               # Keyboard shortcuts overlay
+│   ├── FindReplaceBar.tsx            # Find/replace UI
+│   ├── FileDialog.tsx                # Save/open dialog
+│   ├── StatusBar.tsx                 # Bottom status bar
+│   └── VimCmdBar.tsx                 # Vim : command and / search input
 └── hooks/
-    └── useFileOperations.ts   # File save/load hooks
+    ├── useFileOperations.ts          # File save/load/export state
+    ├── useVimState.ts                # Vim refs, state, textarea input control
+    ├── useVimKeyHandlers.ts          # Vim normal/visual/cmd key handlers
+    ├── useKeyboardHandlers.ts        # Global keyboard routing & dispatch
+    ├── useClipboard.ts               # Copy-to-clipboard functions
+    ├── useExport.ts                  # Code block export logic
+    └── useAppUI.ts                   # UI callbacks (image status, cancel dialog)
 
-index.ts                       # Server entry point (Bun.serve)
+index.ts                              # Server entry point (Bun.serve)
 ```
+
+### Architecture
+
+```
+App.tsx  (orchestrator — ~120 lines + JSX)
+├── hooks/useFileOperations.ts      — file I/O, dialog state
+├── hooks/useVimState.ts            — vim refs, mode, registers, search state
+├── hooks/useVimKeyHandlers.ts      — d/y/c, motions, text objects, register ops
+├── hooks/useKeyboardHandlers.ts    — find/replace bar, dialog, global shortcuts
+├── hooks/useClipboard.ts           — copyToClipboard, copyActiveCodeBlock
+├── hooks/useExport.ts              — handleExportSubmit, handleExportSingleSubmit
+├── hooks/useAppUI.ts               — handleImageStatus, handleCancelDialog
+└── vim-helpers.ts                  — pure functions (88 unit tests)
+```
+
+**Key design principle:** Each hook manages a single concern. `App.tsx` only calls hooks, wires up JSX, and does layout math — no inline business logic. Pure vim helpers are tested independently in `vim-helpers.test.ts`.
