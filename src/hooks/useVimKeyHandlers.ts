@@ -494,6 +494,16 @@ export function useVimKeyHandlers(params: UseVimKeyHandlersParams): UseVimKeyHan
       }
       if (key.meta || key.option) return true
 
+      // ── Quit: q in normal mode ──
+      if (key.name === "q" && !key.shift) {
+        if (isModified) {
+          setStatusMessage({ text: "⚠️ No write since last change (add ! to force)", type: "error" })
+        } else {
+          process.exit(0)
+        }
+        return true
+      }
+
       const pendingOp = vimPendingOpRef.current
 
       // ── Replace char pending ──

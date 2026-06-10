@@ -82,6 +82,7 @@ The editor includes a built-in vim emulation with three modes:
 | `J` | Join next line into current |
 | `u` | Undo |
 | `Ctrl+r` | Redo |
+| `q` | Quit (warning if unsaved) |
 | `.` | Repeat last edit operation |
 | `>>` `<<` | Indent / Deindent line |
 | `Ctrl+a` | Increment number at cursor by count |
@@ -174,7 +175,7 @@ Press `:` in NORMAL mode to enter command mode.
 | Command | Action |
 |---------|--------|
 | `:w` `:write` | Save file |
-| `:q` | Quit (shows warning if unsaved) |
+| `:q` / `q` | Quit (shows warning if unsaved) |
 | `:q!` | Force quit (discard changes) |
 | `:wq` | Save and quit |
 | `:wq!` | Force save and quit |

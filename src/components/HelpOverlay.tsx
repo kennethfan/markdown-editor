@@ -13,6 +13,7 @@ export function HelpOverlay({ width, height }: HelpOverlayProps) {
         { keys: "o / O", desc: "New line below / above" },
         { keys: "v", desc: "VISUAL mode (selection)" },
         { keys: "Ctrl+Z", desc: "Toggle vim ON/OFF" },
+        { keys: "q", desc: "Quit (warning if unsaved)" },
       ],
     },
     {
